@@ -18,8 +18,9 @@ by [Dongmin Park](https://scholar.google.com/citations?user=4xXYQl0AAAAJ&hl=ko)<
 
 <sup>1</sup> [KRAFTON AI](https://www.krafton.ai/en/research/publications/), <sup>2</sup> Seoul National University, <sup>3</sup> NVIDIA, <sup>4</sup> University of Wisconsin-Madison
 
-
-<img src="assets/game_videos/Orak_intro_GIF.gif" width="55%" style="display: block; margin: 0 auto;"><br>
+<div align="center">
+   <img src="assets/game_videos/Orak_intro_GIF.gif" width="55%" style="display: block; margin: 0 auto;"><br>
+</div>
 
 ## Table of Contents
 
