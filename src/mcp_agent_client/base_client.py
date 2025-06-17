@@ -131,6 +131,83 @@ class MCPAgentClient:
         payload = self._get_payload(result)
         return payload["obs_str"], payload["obs_image_str"], payload["game_info"]
 
+    async def call_get_current_state(self, server_id: str):
+        if server_id not in self.sessions:
+            raise ValueError(f"Server {server_id} is not connected")
+        
+        result = await self.sessions[server_id]['session'].call_tool("get-current-state", None)
+        payload = self._get_payload(result)
+        return payload["current_state"]
+
+    async def call_get_memories(self, server_id: str):
+        if server_id not in self.sessions:
+            raise ValueError(f"Server {server_id} is not connected")
+        
+        result = await self.sessions[server_id]['session'].call_tool("get-memories", None)
+        raw_response = self._parse_server_response(result, return_payload=True)[0]
+        
+        # First, parse the outer JSON
+        outer_json = json.loads(raw_response)
+        
+        # If the value is a string that looks like a dictionary, parse it
+        if isinstance(outer_json, str) and outer_json.strip().startswith('{'):
+            try:
+                outer_json = json.loads(outer_json)
+            except json.JSONDecodeError:
+                # If parsing fails, try replacing escaped quotes
+                processed = outer_json.replace('\\"', '"').replace("\\'", "'")
+                outer_json = json.loads(processed)
+        
+        # Create a new payload excluding image-related keys
+        filtered_payload = {}
+        for key, value in outer_json.items():
+            if 'image' not in key.lower() and 'img' not in key.lower():
+                filtered_payload[key] = value
+        
+        return filtered_payload
+
+    async def call_set_memories(self, server_id: str, memories: dict):
+        if server_id not in self.sessions:
+            raise ValueError(f"Server {server_id} is not connected")
+        
+        # Filter out image-related keys before sending
+        filtered_memories = {}
+        for key, value in memories.items():
+            if 'image' not in key.lower() and 'img' not in key.lower():
+                filtered_memories[key] = value
+        
+        result = await self.sessions[server_id]['session'].call_tool("set-memories", {"memories": filtered_memories})
+        self._parse_server_response(result)
+
+    async def call_load_map_memories(self, server_id: str):
+        if server_id not in self.sessions:
+            raise ValueError(f"Server {server_id} is not connected")
+        
+        result = await self.sessions[server_id]['session'].call_tool("load-map-memories", None)
+        payload = self._get_payload(result)
+        return payload["state_dict"], payload["map_memory_dict"], payload["step_count"], payload["dialog_buffer"]
+    
+    async def call_set_map_memories(self, server_id: str, map_memories: dict):
+        if server_id not in self.sessions:
+            raise ValueError(f"Server {server_id} is not connected")
+        
+        result = await self.sessions[server_id]['session'].call_tool("set-map-memories", {"map_memories": map_memories})
+        self._parse_server_response(result)
+
+    async def call_send_action_set(self, action_set: list, server_id: str):
+        if server_id not in self.sessions:
+            raise ValueError(f"Server {server_id} is not connected")
+        
+        result = await self.sessions[server_id]['session'].call_tool("send-action-set", {"action_set": action_set})
+        self._parse_server_response(result)
+
+    async def call_add_long_term_memory(self, memory: str, threshold: float, server_id: str):
+        if server_id not in self.sessions:
+            raise ValueError(f"Server {server_id} is not connected")
+        
+        result = await self.sessions[server_id]['session'].call_tool("add-long-term-memory", {"memory": memory, "threshold": threshold})
+        self._parse_server_response(result)
+
     async def call_add_observation_to_memory(self, obs_str: str, obs_image_str: str, server_id: str):
         if server_id not in self.sessions:
             raise ValueError(f"Server {server_id} is not connected")

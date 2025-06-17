@@ -9,6 +9,7 @@ from mcp_agent_client.base_agent import BaseAgent
 from mcp_agent_client.base_client import MCPAgentClient
 from mcp_agent_client.llms.llm import LocalBase
 from mcp_agent_client.json_schemas import SCHEMA_REGISTRY
+from mcp_agent_client.runner.action_tool_execution import action_execution
 import omegaconf
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,9 @@ class BaseRunner(Configurable):
         self.env = env
         if hasattr(self, "agent") and self.agent is not None:
             self._connect_agent_to_env()
+
+    def set_toolset(self, toolset):
+        self.toolset = toolset
 
     def _connect_agent_to_env(self):
         """
@@ -88,6 +92,12 @@ class BaseRunner(Configurable):
         await self.client.setup_server(game_server_path, game_server_id, game_server_config_path, client_full_config)
         await self.client.setup_server(agent_server_path, agent_server_id, agent_server_config_path, client_full_config)
 
+        if 'pokemon' in game_server_id:
+            from mcp_game_servers.pokemon_red.game.utils.pokemon_tools_mcp import PokemonToolset
+            self.toolset = PokemonToolset(self.client, logger, game_server_id, agent_server_id)
+            self.histories = []
+            self.num_history_buffer = 10
+
         for i in range(self.max_steps):
             logger.info(f"================step: {i+1}================")
             
@@ -96,6 +106,9 @@ class BaseRunner(Configurable):
 
             # Add observation to memory
             await self.client.call_add_observation_to_memory(obs_str, obs_image_str, agent_server_id)
+
+            if 'pokemon' in game_server_id:
+                self.state_dict, self.map_memory_dict, self.step_count, self.dialog_buffer = await self.client.call_load_map_memories(agent_server_id)
 
             # Process agent modules using agent server
             for module_type in self.agent.agent_modules:
@@ -123,6 +136,9 @@ class BaseRunner(Configurable):
                 #logger.info(f"system_prompt: {system_prompt}\n\nuser_prompt: {user_prompt}\n\nresponse: {response}")
                 action_str = await self.client.call_send_agent_module_response(response, agent_server_id, structured_output_kwargs)
                 
+            if 'pokemon' in game_server_id:
+                action_str = await action_execution(action_str, self, agent_server_id)
+
             # Dispatch action to game server and check if game is finished
             assert action_str is not None
             score, done = await self.client.call_dispatch_final_action(action_str, game_server_id)

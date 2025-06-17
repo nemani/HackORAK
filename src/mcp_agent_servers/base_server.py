@@ -16,6 +16,7 @@ from mcp_agent_servers.agent_types import AGENT_MODULES
 
 from mcp_agent_servers.memory import GenericMemory
 from mcp_agent_servers.skill_manager import SkillManager
+from mcp_agent_servers.memory_utils import parse_game_state, get_map_memory_dict, replace_filtered_screen_text, replace_map_on_screen_with_full_map
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,50 @@ def parse_semi_formatted_text(text, prefixs):
     result_dict[current_key] = "\n".join(current_value).strip()
 
     return result_dict
+
+def extract_memory_entries(reflection: str) -> list[str]:
+    import re
+    """
+    Extracts the memory_entries_to_add list from the LLM's ### Self_reflection block.
+    """
+    # Step 1: Remove markdown code block markers (```json ... ```)
+    json_str = re.sub(r"^```json\s*|\s*```$", "", reflection.strip(), flags=re.DOTALL)
+    json_str = re.sub(r"^'''json\s*|\s*'''$", "", json_str.strip(), flags=re.DOTALL)
+    
+    try:
+        reflection_json = json.loads(json_str)
+        return reflection_json.get("NewFacts", [])
+    except:
+        return None
+
+def build_memory_query(goal_description: str, current_state_text: str) -> str:
+    """
+    Generates a memory retrieval query by combining the current goal and relevant context.
+    """
+    return f"Information related to 'Goal: {goal_description}' based on 'Context: {current_state_text}'"
+
+def process_state_tool_mcp(obs_str: str, memory: GenericMemory) -> str:
+    """
+    Processes the state tool to refine the observation string.
+    """
+    map_memory_dict = memory.map_memory_dict
+    dialog_buffer = memory.dialog_buffer
+    step_count = memory.step_count
+
+    state_dict = parse_game_state(obs_str)
+    map_memory_dict = get_map_memory_dict(state_dict, map_memory_dict)
+    current_map = state_dict['map_info']['map_name']
+
+    step_count += 1
+
+    if dialog_buffer != []:
+        obs_str = replace_filtered_screen_text(obs_str, dialog_buffer)
+        dialog_buffer = []
+
+    if state_dict['state'] == 'Field' and current_map in map_memory_dict.keys():
+        obs_str = replace_map_on_screen_with_full_map(obs_str, map_memory_dict[current_map]["explored_map"])
+
+    return obs_str, state_dict, map_memory_dict, step_count, dialog_buffer
 
 def agent_get_local_memory(agent, game_info: Optional[list] = None) -> dict:
     local_memory = {}
@@ -235,6 +280,7 @@ class MCPAgentServer:
 
         # set temp var
         self.module_type = None
+        self.last_module = None
 
     def image2str(self, image):
         buffered = BytesIO()
@@ -259,8 +305,63 @@ class MCPAgentServer:
         def list_agent_module_type() -> str:
             return "The list of the possible agent module tpyes:\n" + "\n".join([module_type for module_type in self.agent_modules])
 
+        @self.mcp.tool(name="get-memories", description="Get the memories from the agent.")
+        def get_memories() -> dict:
+            # Create a new memories dict excluding image-related keys
+            filtered_memories = {}
+            for key, value in self.memory.memories.items():
+                if 'image' not in key.lower() and 'img' not in key.lower():
+                    filtered_memories[key] = value
+            return filtered_memories
+        
+        @self.mcp.tool(name="set-memories", description="Set the memories to the agent.")
+        def set_memories(memories: dict) -> str:
+            # Filter out image-related keys before setting
+            current_memories = self.memory.memories
+            filtered_memories = {}
+            
+            # Keep existing image-related data
+            for key, value in current_memories.items():
+                if 'image' in key.lower() or 'img' in key.lower():
+                    filtered_memories[key] = value
+            
+            # Add non-image data from new memories
+            for key, value in memories.items():
+                if 'image' not in key.lower() and 'img' not in key.lower():
+                    filtered_memories[key] = value
+            
+            self.memory.memories = filtered_memories
+            return "Memories set"
+
+        @self.mcp.tool(name="load-map-memories", description="Load the map memories from the agent.")
+        def load_map_memories() -> dict:
+            return {
+                "state_dict": self.memory.state_dict,
+                "map_memory_dict": self.memory.map_memory_dict,
+                "step_count": self.memory.step_count,
+                "dialog_buffer": self.memory.dialog_buffer
+            }
+        
+        @self.mcp.tool(name="set-map-memories", description="Set the map memories to the agent.")
+        def set_map_memories(map_memories: dict) -> str:
+            self.memory.state_dict = map_memories["state_dict"]
+            self.memory.map_memory_dict = map_memories["map_memory_dict"]
+            self.memory.step_count = map_memories["step_count"]
+            self.memory.dialog_buffer = map_memories["dialog_buffer"]
+            return "Map memories set"
+        
+        @self.mcp.tool(name="add-long-term-memory", description="Add a long term memory to the agent.")
+        def add_long_term_memory(memory: str, threshold: float) -> str:
+            self.memory.add_long_term_memory(memory, threshold)
+            return "Long term memory added"
+
         @self.mcp.tool(name="add-observation-to-memory", description="Add a observation to the agent.")
         def add_observation_to_memory(obs_str: str, obs_image_str: str) -> str:
+            if "Pokemon" in self.cfg.env_name:
+                obs_str, self.memory.state_dict, self.memory.map_memory_dict, self.memory.step_count, self.memory.dialog_buffer = process_state_tool_mcp(
+                    obs_str, self.memory
+                )
+
             self.memory.add("observation", obs_str)
             if obs_image_str!= "":
                 obs_image = self.str2image(obs_image_str)
@@ -296,6 +397,12 @@ class MCPAgentServer:
             elif self.module_type == "long_term_management":
                 system_prompt, user_prompt = get_module_prompts(
                     self, True, "long_term_system", "long_term_user")
+            elif self.module_type == "history_summarization":
+                system_prompt, user_prompt = get_module_prompts(
+                    self, True, "history_summarization_system", "history_summarization_user")
+            elif self.module_type == "memory_management" or self.module_type == "action_execution":
+                system_prompt, user_prompt = "", ""
+                call_chat_completion = False
             else:
                 raise ValueError(f"Unknown module: {self.module_type}")
             
@@ -358,8 +465,79 @@ class MCPAgentServer:
                 output = {"retrieved_memory": retrieved_memory}
                 agent_update_memory(self, output)
                 parsed_output = output
+            elif self.module_type == "history_summarization":
+                output = _parse_module_response(response, "history_summarization", structured_output_kwargs)
+
+                action_memory = self.memory.get_all("action")
+                output['short_term_summary'] += f"\nExecuted Action Sequence: (oldest)[{'->'.join(map(str, action_memory[-self.memory.num_action_buffer:]))}](latest)" if action_memory else None
+                agent_update_memory(self, output)
+                parsed_output = output
+            elif self.module_type == "memory_management":
+                import re
+                goal = self.memory.get_last("subtask_description")
+                query = None
+
+                state_dict = self.memory.state_dict
+                cur_state = state_dict['state']
+                if cur_state == "Title":
+                    environment_perception = f"State:{cur_state}"
+                elif cur_state == "Field":
+                    map_info = state_dict['map_info']
+                    environment_perception = f"State:{cur_state}, MapName:{map_info['map_name']}, PlayerPos:({map_info['player_pos_x']},{map_info['player_pos_y']})"
+                elif cur_state == 'Dialog':
+                    environment_perception = f"State:{cur_state}, ScreenText:{state_dict['filtered_screen_text']}"
+                else:
+                    environment_perception = f"State:{cur_state}, Enemy:{state_dict['enemy_pokemon']}, Party:{state_dict['your_party']}"
+
+                self.memory.add('environment_perception', environment_perception)
+
+                if self.memory.is_exist('self_reflection'):
+                    try:
+                        reflection_data_str = self.memory.get_last('self_reflection').strip()
+                        json_str = re.sub(r"^```json\s*|\s*```$", "", reflection_data_str, flags=re.DOTALL)
+                        reflection_json = json.loads(json_str)
+
+                        if 'Goal' in reflection_json:
+                            goal = str(reflection_json['Goal'])
+                        else:
+                            goal = 'Not Provided from reflection'
+
+                        # self.memory.environment_perception = reflection_json.get("Env", [])
+                    except (json.JSONDecodeError, AttributeError, TypeError) as e:
+                        print(f"Error processing self_reflection: {e}")
+                        print("Use default goal and environment_perception.")
+                    
+                    if 'self_reflection' == self.last_module:  # LTM Managing
+                        try:
+                            memory_entries = extract_memory_entries(self.memory.get_last('self_reflection'))
+                            if memory_entries:
+                                for entry in memory_entries:
+                                    self.memory.add_long_term_memory(entry, similarity_threshold=0.2)
+                        except Exception as e:
+                            print(f"Error adding long term memory: {e}")
+                    else:
+                        goal = self.memory.get_last('subtask_description')
+
+                query = build_memory_query(goal, self.memory.get_last('environment_perception'))
+                try:
+                    memory_snippets = self.memory.retrieve_long_term_memory(query, similarity_threshold=0.4)
+                    self.memory.add('relevant_memory', memory_snippets or None)
+                    parsed_output = self.memory.get_last('relevant_memory')
+                except Exception as e:
+                    logger.error(f"Error retrieving long term memory: {e}")
+                    # Return empty memory if retrieval fails
+                    self.memory.add('relevant_memory', None)
+                    parsed_output = None
+            elif self.module_type == "action_execution":
+                # Pop the last action from the action memory
+                action_str = self.memory.get_last('action')
+                self.memory.memories['action'] = self.memory.memories['action'][:-1]
+                parsed_output = action_str
             else:
                 raise ValueError(f"Unknown module: {self.module_type}")
+            
+            self.last_module = self.module_type
+
             return json.dumps({
                 "parsed_output": str(parsed_output),
             })

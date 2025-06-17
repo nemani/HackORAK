@@ -6,7 +6,6 @@ runner:
 env:
   task: DefeatBrock
   input_modality: "text"
-  exp_name: "gpt-4o_text_pokemon_trial1"
   rom_path: ./executables/pokemon_red/pyboy/pokered.gbc
   success_condition: get_boulder_badge
 
@@ -21,6 +20,10 @@ agent:
   agent_type: pokemon_agent
   prompt_path: mcp_agent_servers.pokemon_red.prompts.text.pokemon_agent
 
-# # mcp configuration
+# # mcp configuration (Windows)
 # game_server: ".\\src\\mcp_game_servers\\pokemon_red\\server.py"
 # agent_server: ".\\src\\mcp_agent_servers\\pokemon_red\\server.py"
+
+# mcp configuration (Linux)
+game_server: "./src/mcp_game_servers/pokemon_red/server.py"
+agent_server: "./src/mcp_agent_servers/pokemon_red/server.py"

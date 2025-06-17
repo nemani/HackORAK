@@ -68,8 +68,8 @@ class GenericMemory:
 
         if results:
             _, score = results[0]
-            if score >= similarity_threshold:
-                logger.info(f"The new memory is too similar ({score}>={similarity_threshold}) to an existing memory and will not be saved.")
+            if score <= similarity_threshold:
+                logger.info(f"The new memory is too similar ({score}<={similarity_threshold}) to an existing memory and will not be saved.")
                 return
 
         mem_id = str(uuid.uuid4())
@@ -85,8 +85,8 @@ class GenericMemory:
         if k == 0 or not query:
             return None
         docs_and_scores = self.vectordb.similarity_search_with_score(query, k=k)
-        # Filter documents with similarity score >= 0.8
-        filtered_docs = [(doc, score) for doc, score in docs_and_scores if score >= similarity_threshold]
+        # Filter documents with similarity score <= 0.8
+        filtered_docs = [(doc, score) for doc, score in docs_and_scores if score <= similarity_threshold]
         retrieved_contents = "\n".join([f"{i+1}: {doc.page_content}" for i, (doc, _) in enumerate(filtered_docs)])
         if retrieved_contents == "":
             return None

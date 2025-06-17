@@ -525,10 +525,13 @@ class PwaatEnv(BaseEnv):
         )
 
         # 5) 대화 로그 복사
-        source_file = os.path.join(
-            "src", "mcp_game_servers", "pwaat", "game",
-            "conversation_log_inputs", self.task, "conversation_log_input.txt"
-        )
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        source_file = os.path.normpath(os.path.join(
+            base_dir,
+            "conversation_log_inputs",
+            self.task,
+            "conversation_log_input.txt"
+        ))
         assert os.path.exists(source_file), f"Conversation log input file not found: {source_file}"
         dest_file = os.path.join(self.state_root_dir, "conversation_log_input.txt")
         shutil.copy2(source_file, dest_file)

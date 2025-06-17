@@ -63,6 +63,9 @@ class MCPGameServer:
 
     def image2str(self, image):
         buffered = BytesIO()
+        # Convert RGBA to RGB if necessary
+        if image.mode == 'RGBA':
+            image = image.convert('RGB')
         image.save(buffered, format="JPEG")
         img_str = base64.b64encode(buffered.getvalue()).decode()
         return img_str
@@ -99,6 +102,17 @@ class MCPGameServer:
                 "obs_str": obs_str,
                 "obs_image_str": obs_image_str,
                 "game_info": game_info
+            })
+
+        @self.mcp.tool(name="send-action-set", description="Send a action set to the server.")
+        def send_action_set(action_set: list) -> str:
+            self.env.send_action_set(action_set)
+            return "Action set sent"
+        
+        @self.mcp.tool(name='get-current-state', description='Get the current state of the game')
+        def get_current_state() -> str:
+            return json.dumps({
+                "current_state": self.env._receive_state()
             })
 
         @self.mcp.tool(name="dispatch-final-action", description="Dispatch a client final action to the server and return score and termination flag")

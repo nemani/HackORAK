@@ -1,5 +1,14 @@
 # Orak 🎮
 
+<div align="center">
+  
+[![arXiv](https://img.shields.io/badge/arXiv-2506.03610-b31b1b.svg?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/pdf/2506.03610)
+[![HuggingFace](https://img.shields.io/badge/🤗HuggingFace-%20View%20Rankings?style=for-the-badge&logoColor=white&color=F59E0B)](https://huggingface.co/your-org/your-model)
+[![Leaderboard](https://img.shields.io/badge/🏆Leaderboard-%20View%20Rankings?style=for-the-badge&logo=trophy)](https://krafton-ai.github.io/orak-leaderboard/)
+[![X](https://img.shields.io/badge/-Twitter-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/dongmin_park11/status/1930792235836346427)
+</div>
+
+
 **Orak (오락)** is a _foundational_ benchmark for evaluating Large Language Model (LLM) agents in diverse popular video games. Please check out our [paper](https://arxiv.org/pdf/2506.03610) and the [leaderboard](https://krafton-ai.github.io/orak-leaderboard/) for more details!
 
 > *The name **Orak** comes from **오락 (orak)**, the native Korean word meaning "game".
@@ -9,6 +18,8 @@ by [Dongmin Park](https://scholar.google.com/citations?user=4xXYQl0AAAAJ&hl=ko)<
 
 <sup>1</sup> [KRAFTON AI](https://www.krafton.ai/en/research/publications/), <sup>2</sup> Seoul National University, <sup>3</sup> NVIDIA, <sup>4</sup> University of Wisconsin-Madison
 
+
+<img src="assets/game_videos/Orak_intro_GIF.gif" width="55%" style="display: block; margin: 0 auto;"><br>
 
 ## Table of Contents
 

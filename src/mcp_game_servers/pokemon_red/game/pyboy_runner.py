@@ -392,8 +392,8 @@ class PyBoyRunner:
         if self.get_battle_state() != 'Field':
             text += "Not in Field State"
             return text
-        for sy in range(max(0, player_y - 4), min(player_y + 5, max_height + 1)):
-            for sx in range(max(0, player_x - 4), min(player_x + 5, max_width + 1)):
+        for sy in range(max(0, player_y - 4), min(player_y + 4, max_height) + 1):
+            for sx in range(max(0, player_x - 4), min(player_x + 5, max_width) + 1):
                 key = (sx, sy)
                 if key in object_coords:
                     cell = object_coords[key]

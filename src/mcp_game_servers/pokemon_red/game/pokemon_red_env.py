@@ -44,7 +44,6 @@ class PokemonRedEnv(BaseEnv):
         task: str
         rom_path: str
         success_condition: str
-        exp_name: str
         input_modality: str = "text"
 
     cfg: Config
@@ -61,8 +60,6 @@ class PokemonRedEnv(BaseEnv):
         self.pending_action = None
 
         self.runner = PyBoyRunner(self.rom_path)
-
-        self.exp_name = self.cfg.exp_name
 
         self._start_game()
 
