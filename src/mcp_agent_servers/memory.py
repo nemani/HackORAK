@@ -3,27 +3,50 @@ from datetime import datetime
 import json
 import uuid
 import logging
-from langchain_openai import OpenAIEmbeddings
-from langchain_chroma import Chroma
-from mcp_agent_servers.setup_openai import setup_openai
 
 logger = logging.getLogger(__name__)
 
-setup_openai()
+try:
+    from langchain_openai import OpenAIEmbeddings
+except ImportError:
+    OpenAIEmbeddings = None
+
+try:
+    from langchain_chroma import Chroma
+except ImportError:
+    Chroma = None
+
+try:
+    from mcp_agent_servers.setup_openai import setup_openai
+    setup_openai()
+except Exception:
+    pass
 
 class GenericMemory:
     def __init__(self, path: str):
         self.memories: Dict[str, List[Any]] = {}
         self.histories = []
 
-        # long-term memory
+        # long-term memory — lazily initialized only when Chroma is available
         self.save_path = f"data/long_term_memory/{path.replace('logs/', '', 1)}/"
-        self.vectordb = Chroma(
-            collection_name="long_term_memory",
-            embedding_function=OpenAIEmbeddings(),
-            persist_directory=self.save_path,
-        )
         self.retrieval_top_k = 3
+        self._vectordb = None
+
+    @property
+    def vectordb(self):
+        if self._vectordb is None:
+            if Chroma is not None and OpenAIEmbeddings is not None:
+                self._vectordb = Chroma(
+                    collection_name="long_term_memory",
+                    embedding_function=OpenAIEmbeddings(),
+                    persist_directory=self.save_path,
+                )
+            else:
+                raise RuntimeError(
+                    "Chroma/OpenAIEmbeddings not available. "
+                    "Install langchain-chroma and langchain-openai to use long-term memory."
+                )
+        return self._vectordb
         
         # Pokemon specific
         self.map_memory_dict = {}

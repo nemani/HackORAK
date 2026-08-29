@@ -8,6 +8,7 @@ from typing import List, Tuple
 from contextlib import AsyncExitStack
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.client.sse import sse_client
 import base64
 from PIL import Image
 from io import BytesIO
@@ -23,12 +24,16 @@ class MCPAgentClient:
 
     async def connect_to_server(self, server_script_path: str, server_id: str = None, config_path: str = None, client_full_config: omegaconf.DictConfig = None):
         """
-        Connect to the MCP server by launching the server script as a subprocess.
+        Connect to the MCP server.
+        
+        If server_script_path starts with http:// or https://, it is treated as an
+        SSE endpoint URL. Otherwise it is treated as a local script path and launched
+        as a stdio subprocess.
         
         Args:
-            server_script_path: Path to the MCP server script.
+            server_script_path: Path to the MCP server script or SSE URL.
             server_id: Unique identifier for the server connection. If None, uses the script path as ID.
-            config_path: Path to the configuration file for the server.
+            config_path: Path to the configuration file for the server (stdio only).
             client_full_config: The main client configuration object.
         """
         if server_id is None:
@@ -37,50 +42,71 @@ class MCPAgentClient:
         if server_id in self.sessions:
             raise ValueError(f"Server {server_id} is already connected")
 
-        python_path = sys.executable
-        current_command = python_path
-        current_args = [server_script_path]
-        if config_path:
-            current_args.extend(["--config", config_path])
+        # Detect SSE (URL) vs stdio (local script)
+        if server_script_path.startswith("http://") or server_script_path.startswith("https://"):
+            # --- SSE transport ---
+            sse_url = server_script_path
+            logger.info(f"[MCPAgentClient] Connecting to SSE endpoint: {sse_url}")
+            sse_transport = await self.exit_stack.enter_async_context(sse_client(sse_url))
+            read_stream, write_stream = sse_transport
+            session = await self.exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
+            await session.initialize()
 
-        if server_id == "street_fighter_game_server":
-            if client_full_config and hasattr(client_full_config, 'diambra_settings'):
-                rom_path = client_full_config.diambra_settings.get('rom_path')
-                diambra_executable = client_full_config.diambra_settings.get('diambra_executable', 'diambra')
+            response = await session.list_tools()
+            tools = response.tools
+            print(f"Connected to SSE server \"{server_id}\" with tools:", [tool.name for tool in tools])
 
-                if rom_path:
-                    current_command = diambra_executable
-                    diambra_args = ["run", "-r", rom_path, "python", server_script_path]
-                    if config_path:
-                        diambra_args.extend(["--config", config_path])
-                    current_args = diambra_args
-                    
-                    logger.info(f"[MCPAgentClient] Using 'diambra run' for {server_id} from config. Command: {current_command}, Args: {current_args}")
+            self.sessions[server_id] = {
+                'session': session,
+                'read': read_stream,
+                'write': write_stream,
+            }
+        else:
+            # --- stdio transport (original path) ---
+            python_path = sys.executable
+            current_command = python_path
+            current_args = [server_script_path]
+            if config_path:
+                current_args.extend(["--config", config_path])
+
+            if server_id == "street_fighter_game_server":
+                if client_full_config and hasattr(client_full_config, 'diambra_settings'):
+                    rom_path = client_full_config.diambra_settings.get('rom_path')
+                    diambra_executable = client_full_config.diambra_settings.get('diambra_executable', 'diambra')
+
+                    if rom_path:
+                        current_command = diambra_executable
+                        diambra_args = ["run", "-r", rom_path, "python", server_script_path]
+                        if config_path:
+                            diambra_args.extend(["--config", config_path])
+                        current_args = diambra_args
+                        
+                        logger.info(f"[MCPAgentClient] Using 'diambra run' for {server_id} from config. Command: {current_command}, Args: {current_args}")
+                    else:
+                        logger.warning(f"[MCPAgentClient] 'rom_path' not found in diambra_settings for {server_id}. Falling back to standard python execution.")
                 else:
-                    logger.warning(f"[MCPAgentClient] 'rom_path' not found in diambra_settings for {server_id}. Falling back to standard python execution.")
-            else:
-                logger.warning(f"[MCPAgentClient] 'diambra_settings' not found in client_full_config for {server_id} or it's not a StreetFighter game server. Falling back to standard python execution.")
-        
-        server_params = StdioServerParameters(
-            command=current_command,
-            args=current_args,
-            stderr=sys.stderr
-        )
-        
-        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-        stdio, write = stdio_transport
-        session = await self.exit_stack.enter_async_context(ClientSession(stdio, write))
-        await session.initialize()
+                    logger.warning(f"[MCPAgentClient] 'diambra_settings' not found in client_full_config for {server_id} or it's not a StreetFighter game server. Falling back to standard python execution.")
+            
+            server_params = StdioServerParameters(
+                command=current_command,
+                args=current_args,
+                stderr=sys.stderr
+            )
+            
+            stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+            stdio, write = stdio_transport
+            session = await self.exit_stack.enter_async_context(ClientSession(stdio, write))
+            await session.initialize()
 
-        response = await session.list_tools()
-        tools = response.tools
-        print(f"Connected to server \"{server_id}\" with tools:", [tool.name for tool in tools])
+            response = await session.list_tools()
+            tools = response.tools
+            print(f"Connected to server \"{server_id}\" with tools:", [tool.name for tool in tools])
 
-        self.sessions[server_id] = {
-            'session': session,
-            'stdio': stdio,
-            'write': write
-        }
+            self.sessions[server_id] = {
+                'session': session,
+                'stdio': stdio,
+                'write': write
+            }
 
     def str2image(self, img_str):
         img_data = base64.b64decode(img_str)
@@ -106,8 +132,11 @@ class MCPAgentClient:
     def _get_payload(self, result):
         return json.loads(self._parse_server_response(result, return_payload=True)[0])
 
+    def _is_url(self, path: str) -> bool:
+        return path.startswith("http://") or path.startswith("https://")
+
     async def setup_server(self, server_script_path: str, server_id: str = None, config_path: str = None, client_full_config: omegaconf.DictConfig = None):
-        if not os.path.exists(server_script_path):
+        if not self._is_url(server_script_path) and not os.path.exists(server_script_path):
             raise FileNotFoundError(f"Server script not found at path: {server_script_path}")
             
         if sys.platform == 'win32':

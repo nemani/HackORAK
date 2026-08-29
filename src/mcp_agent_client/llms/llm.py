@@ -438,22 +438,31 @@ class LocalBase:
         self.desired_output_length = desired_output_length
         self.temperature = temperature
         self.repetition_penalty = repetition_penalty
-        
-        finetune_base_model = [
-            "meta-llama/Llama-3.2-1B-Instruct",
-            "meta-llama/Llama-3.2-3B-Instruct",
-        ]
-        is_finetune = False
-        for base_model in finetune_base_model:
-            if self.model.startswith(base_model):
-                is_finetune = True
-                self.tok = AutoTokenizer.from_pretrained(base_model)
-                break
-        if not is_finetune:
-            self.tok = AutoTokenizer.from_pretrained(self.model)
 
-        if self.model.startswith("meta-llama/Llama-3.2"):
-            self.tok.chat_template = llama_chat_template
+        # When api_base_url points to OpenRouter or another remote provider,
+        # model names (e.g. "meta-llama/llama-3.2-3b-instruct:free") contain
+        # colons that are invalid for HuggingFace repo IDs. Skip the
+        # AutoTokenizer load and use a dummy tokenizer that triggers the
+        # manual prompt-formatting fallback in chat_messages_to_prompt.
+        if api_base_url and "openrouter" in api_base_url.lower():
+            from types import SimpleNamespace
+            self.tok = SimpleNamespace(chat_template=None)
+        else:
+            finetune_base_model = [
+                "meta-llama/Llama-3.2-1B-Instruct",
+                "meta-llama/Llama-3.2-3B-Instruct",
+            ]
+            is_finetune = False
+            for base_model in finetune_base_model:
+                if self.model.startswith(base_model):
+                    is_finetune = True
+                    self.tok = AutoTokenizer.from_pretrained(base_model)
+                    break
+            if not is_finetune:
+                self.tok = AutoTokenizer.from_pretrained(self.model)
+
+            if self.model.startswith("meta-llama/Llama-3.2"):
+                self.tok.chat_template = llama_chat_template
 
     def cutoff(self, message: str, budget: int) -> str:
         tokens = self.enc.encode(message)
@@ -591,6 +600,12 @@ class LocalBase:
             **kwargs,
         )
         choices = []
+        if response.choices is None:
+            # API returned an error (e.g. upstream provider overloaded); raise so retry kicks in
+            error_msg = getattr(response, 'error', None)
+            if error_msg:
+                raise RuntimeError(f"API error: {error_msg}")
+            raise RuntimeError(f"API returned null choices: {response}")
         for choice in response.choices:
             choices.append(
                 OpenAIChoice(
@@ -598,10 +613,10 @@ class LocalBase:
                         content=choice.text,
                         role="assistant",
                     ),
-                    finish_reason=choice.finish_reason,
+                    finish_reason=getattr(choice, 'finish_reason', None),
                     index=choice.index,
-                    logprobs=choice.logprobs,
-                    stop_reason=choice.stop_reason,
+                    logprobs=getattr(choice, 'logprobs', None),
+                    stop_reason=getattr(choice, 'stop_reason', None),
                 )
             )
         return_response = OpenAIChatCompletion(

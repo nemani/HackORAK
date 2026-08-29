@@ -83,8 +83,13 @@ class BaseRunner(Configurable):
             client_full_config: The full configuration object loaded by mcp_play_game.py.
         """
         # Connect to game and agent servers
-        game_server_id = "_".join([os.path.basename(os.path.dirname(game_server_path)), "game_server"])
-        agent_server_id = "_".join([os.path.basename(os.path.dirname(agent_server_path)), "agent_server"])
+        if client_full_config.get('game_server', '').startswith('http'):
+            # Remote SSE servers — use simple fixed IDs
+            game_server_id = "game_server"
+            agent_server_id = "agent_server"
+        else:
+            game_server_id = "_".join([os.path.basename(os.path.dirname(game_server_path)), "game_server"])
+            agent_server_id = "_".join([os.path.basename(os.path.dirname(agent_server_path)), "agent_server"])
         
         game_server_config_path = os.path.join(log_path, "config_game.yaml")
         agent_server_config_path = os.path.join(log_path, "config_agent.yaml")

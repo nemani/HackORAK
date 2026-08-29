@@ -1,21 +1,44 @@
 from typing import Dict, List, Any
 import json
-from langchain_openai import OpenAIEmbeddings
-from langchain_chroma import Chroma
-from mcp_agent_servers.setup_openai import setup_openai
 
-setup_openai()
+try:
+    from langchain_openai import OpenAIEmbeddings
+except ImportError:
+    OpenAIEmbeddings = None
+
+try:
+    from langchain_chroma import Chroma
+except ImportError:
+    Chroma = None
+
+try:
+    from mcp_agent_servers.setup_openai import setup_openai
+    setup_openai()
+except Exception:
+    pass
 
 class SkillManager:
     def __init__(self, path):
         self.save_path = f"data/skills/{path.replace('logs/', '', 1)}/"
         self.skills: Dict[str, List[Any]] = {}
-        self.vectordb = Chroma(
-            collection_name="skill_vectordb",
-            embedding_function=OpenAIEmbeddings(),
-            persist_directory=self.save_path,
-        )
         self.retrieval_top_k = 5
+        self._vectordb = None
+
+    @property
+    def vectordb(self):
+        if self._vectordb is None:
+            if Chroma is not None and OpenAIEmbeddings is not None:
+                self._vectordb = Chroma(
+                    collection_name="skill_vectordb",
+                    embedding_function=OpenAIEmbeddings(),
+                    persist_directory=self.save_path,
+                )
+            else:
+                raise RuntimeError(
+                    "Chroma/OpenAIEmbeddings not available. "
+                    "Install langchain-chroma and langchain-openai to use skills."
+                )
+        return self._vectordb
     
     def add_new_skill(self, skill_name: str, skill: str, description: str) -> None:
         if all((skill_name, skill, description)): # if all not None

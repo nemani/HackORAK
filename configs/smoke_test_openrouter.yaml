@@ -1,0 +1,21 @@
+env_name: "TwentyFourtyEight"
+log_path: "logs"
+runner:
+  max_steps: 10
+env:
+  task: "Merge Tiles to Reach the Target"
+  show_graphic: True
+  target_tile: 2048
+  input_modality: "text"
+
+agent:
+  llm_name: "nvidia/nemotron-3-ultra-550b-a55b:free"
+  api_key: "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"
+  api_base_url: "https://openrouter.ai/api/v1"
+  temperature: 0.0
+  repetition_penalty: 1.0
+  agent_type: zeroshot_agent
+  prompt_path: mcp_agent_servers.twenty_fourty_eight.prompts.text.zeroshot_agent
+
+game_server: "https://8000-sroctl2mczggwcck.daytonaproxy01.eu/sse"
+agent_server: "./src/mcp_agent_servers/twenty_fourty_eight/server.py"
