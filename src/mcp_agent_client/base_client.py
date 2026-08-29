@@ -288,6 +288,7 @@ class MCPAgentClient:
         self.sessions.clear()
         try:
             await asyncio.wait_for(self.exit_stack.aclose(), timeout=5)
-        except asyncio.TimeoutError:
-            print("[DEBUG] aclose() timed out — remaining callbacks in exit stack:")
+        except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
+            # Python 3.10 + anyio cancel scope edge case; exit stack is closed
+            pass
         print("Clean up resources and close all sessions.")
