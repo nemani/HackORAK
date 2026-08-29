@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HackOrak Live Dashboard</title>
+<style>
+  /* ------------------------------------------------------------------ */
+  /*  Reset & base                                                      */
+  /* ------------------------------------------------------------------ */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", Arial, sans-serif;
+    background: #0b0f19;
+    color: #e2e8f0;
+    min-height: 100vh;
+  }
+  /* ------------------------------------------------------------------ */
+  /*  Layout                                                            */
+  /* ------------------------------------------------------------------ */
+  header {
+    padding: 1.5rem 2rem 1rem;
+    border-bottom: 1px solid #1e293b;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+  header .badge {
+    background: #1e293b; color: #94a3b8; font-size: 0.75rem;
+    padding: 0.25rem 0.75rem; border-radius: 999px;
+  }
+  main { padding: 1.5rem 2rem 2rem; display: flex; gap: 2rem; flex-wrap: wrap; }
+  .panel {
+    background: #111827; border: 1px solid #1e293b; border-radius: 12px;
+    overflow: hidden;
+  }
+  .panel.leaderboard { flex: 2; min-width: 480px; }
+  .panel.feed { flex: 1; min-width: 320px; }
+  .panel h2 {
+    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: #64748b; padding: 1rem 1.25rem 0.75rem;
+    border-bottom: 1px solid #1e293b;
+  }
+  /* ------------------------------------------------------------------ */
+  /*  Leaderboard table                                                 */
+  /* ------------------------------------------------------------------ */
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; font-size: 0.7rem; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #64748b; padding: 0.75rem 1.25rem;
+  }
+  td { padding: 0.65rem 1.25rem; font-size: 0.875rem; }
+  tbody tr { border-top: 1px solid #1e293b33; transition: background 0.2s; }
+  tbody tr:hover { background: #1e293b55; }
+  .rank { font-weight: 700; color: #38bdf8; width: 2rem; }
+  .rank-1 { color: #fbbf24; }  /* gold */
+  .rank-2 { color: #94a3b8; }  /* silver */
+  .rank-3 { color: #d97706; }  /* bronze */
+  .worker-id { font-family: "SF Mono", "Fira Code", monospace; font-size: 0.8rem; }
+  .model-tag {
+    display: inline-block; background: #1e293b; color: #94a3b8;
+    font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px;
+  }
+  .score-val { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .step-val { color: #64748b; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  .game-state {
+    max-width: 150px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; color: #94a3b8; font-size: 0.75rem;
+  }
+  tfoot td {
+    padding: 0.5rem 1.25rem; font-size: 0.7rem; color: #475569;
+    border-top: 1px solid #1e293b;
+  }
+  /* ------------------------------------------------------------------ */
+  /*  Activity feed                                                     */
+  /* ------------------------------------------------------------------ */
+  .feed-list { list-style: none; max-height: 480px; overflow-y: auto; }
+  .feed-list li {
+    padding: 0.75rem 1.25rem; border-bottom: 1px solid #1e293b33;
+    font-size: 0.825rem; animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } }
+  .feed-worker { font-family: "SF Mono", "Fira Code", monospace; font-weight: 600; }
+  .feed-score { color: #34d399; font-weight: 700; }
+  .feed-step { color: #64748b; font-size: 0.75rem; }
+  .feed-time { color: #475569; font-size: 0.7rem; float: right; }
+  /* ------------------------------------------------------------------ */
+  /*  Connection status                                                 */
+  /* ------------------------------------------------------------------ */
+  .status-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    margin-right: 6px;
+  }
+  .status-dot.live { background: #22c55e; box-shadow: 0 0 6px #22c55e80; }
+  .status-dot.dead  { background: #ef4444; }
+  .empty-state { text-align: center; padding: 2rem 1rem; color: #475569; }
+</style>
+</head>
+<body>
+<header>
+  <h1>&#9875; HackOrak Live Dashboard</h1>
+  <div style="display:flex;align-items:center;gap:0.75rem;">
+    <span class="status-dot" id="status-dot"></span>
+    <span id="status-label" style="font-size:0.8rem;color:#64748b;">connecting…</span>
+    <span class="badge" id="agent-count">0 agents</span>
+  </div>
+</header>
+<main>
+  <!-- Leaderboard -->
+  <section class="panel leaderboard">
+    <h2>Leaderboard</h2>
+    <table>
+      <thead><tr>
+        <th>#</th><th>Worker</th><th>Model</th><th>Score</th><th>Step</th><th>State</th>
+      </tr></thead>
+      <tbody id="leaderboard-body"></tbody>
+      <tfoot><tr><td colspan="6" id="leaderboard-foot">&nbsp;</td></tr></tfoot>
+    </table>
+  </section>
+
+  <!-- Recent Activity -->
+  <section class="panel feed">
+    <h2>Recent Activity</h2>
+    <ul class="feed-list" id="feed-list"></ul>
+  </section>
+</main>
+
+<script>
+/* ====================================================================== */
+/*  HackOrak Dashboard – vanilla JS SSE client                          */
+/* ====================================================================== */
+
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+const STATE = { scores: [], feed: [], connected: false };
+
+/* --------------------------------------------------------------------- */
+/*  SSE connection                                                        */
+/* --------------------------------------------------------------------- */
+let _retryTimer = null;
+
+function connect() {
+  const es = new EventSource("/events");
+
+  es.addEventListener("sync", (e) => {
+    const data = JSON.parse(e.data);
+    STATE.scores = data.scores || [];
+    STATE.feed   = data.feed   || [];
+    STATE.connected = true;
+    updateUI(true);
+  });
+
+  es.addEventListener("score_update", (e) => {
+    const entry = JSON.parse(e.data);
+    // Update / insert into scores
+    const idx = STATE.scores.findIndex(s => s.worker_id === entry.worker_id);
+    if (idx >= 0) {
+      STATE.scores[idx] = entry;
+    } else {
+      STATE.scores.push(entry);
+    }
+    STATE.scores.sort((a,b) => b.score - a.score);
+    // Prepend to feed
+    STATE.feed.unshift(entry);
+    if (STATE.feed.length > 20) STATE.feed = STATE.feed.slice(0, 20);
+    updateUI(false);
+  });
+
+  es.onopen = () => {
+    STATE.connected = true;
+    updateUI(false);
+  };
+
+  es.onerror = () => {
+    STATE.connected = false;
+    es.close();
+    updateUI(false);
+    if (_retryTimer) clearTimeout(_retryTimer);
+    _retryTimer = setTimeout(connect, 3000);
+  };
+}
+
+/* --------------------------------------------------------------------- */
+/*  Render helpers                                                        */
+/* --------------------------------------------------------------------- */
+
+function updateUI(full) {
+  // Connection indicator
+  const dot = $("#status-dot");
+  const lbl = $("#status-label");
+  dot.className = "status-dot " + (STATE.connected ? "live" : "dead");
+  lbl.textContent = STATE.connected ? "live" : "reconnecting…";
+
+  // Agent count
+  $("#agent-count").textContent = STATE.scores.length + " agents";
+
+  // Leaderboard table
+  const tbod = $("#leaderboard-body");
+  if (STATE.scores.length === 0) {
+    tbod.innerHTML = `<tr><td colspan="6" class="empty-state">Waiting for agents to report scores…</td></tr>`;
+  } else {
+    tbod.innerHTML = STATE.scores.map((e, i) => {
+      const rankCls = i < 3 ? ` rank-${i+1}` : "";
+      return `<tr>
+        <td class="rank${rankCls}">${i+1}</td>
+        <td class="worker-id">${esc(e.worker_id)}</td>
+        <td><span class="model-tag">${esc(e.model)}</span></td>
+        <td class="score-val">${formatNum(e.score)}</td>
+        <td class="step-val">${e.step}</td>
+        <td class="game-state" title="${esc(e.game_state)}">${esc(e.game_state)}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  // Footer
+  $("#leaderboard-foot").textContent = STATE.scores.length
+    ? `Top score: ${formatNum(STATE.scores[0]?.score || 0)}`
+    : "No scores yet";
+
+  // Feed (only redraw on full sync; on single update we prepend in place)
+  if (full || STATE.feed.length === 0) {
+    redrawFeed();
+  } else {
+    prependFeedEntry(STATE.feed[0]);
+  }
+}
+
+function redrawFeed() {
+  const ul  = $("#feed-list");
+  if (STATE.feed.length === 0) {
+    ul.innerHTML = `<li class="empty-state">No activity yet</li>`;
+    return;
+  }
+  ul.innerHTML = STATE.feed.map(e => feedHTML(e)).join("");
+}
+
+function prependFeedEntry(entry) {
+  const ul  = $("#feed-list");
+  // Remove empty-state if present
+  const empty = ul.querySelector(".empty-state");
+  if (empty) empty.remove();
+  const li = document.createElement("li");
+  li.innerHTML = feedHTML(entry);
+  ul.insertBefore(li, ul.firstChild);
+  // Cap at 20
+  while (ul.children.length > 20) ul.lastChild.remove();
+}
+
+function feedHTML(e) {
+  const game = esc(e.game_state || "—");
+  return `<span class="feed-worker">${esc(e.worker_id)}</span>
+    <span class="feed-score">+${formatNum(e.score)}</span>
+    <span class="feed-step">step ${e.step}</span>
+    &nbsp;<span style="color:#94a3b8;font-size:0.75rem;">${game}</span>
+    <span class="feed-time">${esc(e.timestamp?.slice(11,19) || ""}</span>`;
+}
+
+/* --------------------------------------------------------------------- */
+/*  Utilities                                                             */
+/* --------------------------------------------------------------------- */
+
+function esc(s) {
+  if (!s) return "";
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function formatNum(n) {
+  if (n == null || isNaN(n)) return "—";
+  // Format with commas for readability
+  const fixed = Number(n).toFixed(1);
+  const parts = fixed.split(".");
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return parts.join(".");  // keep one decimal
+}
+
+/* --------------------------------------------------------------------- */
+/*  Bootstrap                                                             */
+/* --------------------------------------------------------------------- */
+
+document.addEventListener("DOMContentLoaded", () => {
+  connect();
+});
+</script>
+</body>
+</html>
