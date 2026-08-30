@@ -67,42 +67,46 @@ def main() -> None:
     sb = d.create(params, timeout=120)
     print(f"Sandbox created: {sb.id}")
 
+    # Sandbox writable home directory (not /workspace which is read-only)
+    home = sb.get_user_home_dir()
+    wsp = f"{home}/workspace"
+
     try:
         # ── Step 2: Clone repo & install deps ───────────────────────────
-        print("Cloning HackORAK repo (release branch)...")
+        print(f"Cloning HackORAK repo (release branch) into {wsp}...")
         sb.git.clone(
             "https://github.com/nemani/HackORAK.git",
-            "/workspace",
+            wsp,
             branch="release",
         )
 
         print("Installing uv...")
         r = sb.process.exec(
-            "cd /workspace && pip install uv 2>&1 | tail -3",
+            f"cd {wsp} && pip install uv 2>&1 | tail -3",
             timeout=60,
         )
         print(r.artifacts.stdout)
 
         print("Running uv sync...")
         r = sb.process.exec(
-            "cd /workspace && uv sync 2>&1 | tail -5",
+            f"cd {wsp} && uv sync 2>&1 | tail -5",
             timeout=300,
         )
         print(r.artifacts.stdout)
 
         # ── Step 3: Write config and run the model ──────────────────────
         print("Writing game config...")
-        sb.process.exec("mkdir -p /workspace/configs", timeout=10)
-        sb.fs.upload_file(TEST_CONFIG_YAML.encode(), "/workspace/configs/test.yaml")
+        sb.process.exec(f"mkdir -p {wsp}/configs", timeout=10)
+        sb.fs.upload_file(TEST_CONFIG_YAML.encode(), f"{wsp}/configs/test.yaml")
 
         # Verify the config was written
-        r = sb.process.exec("cat /workspace/configs/test.yaml", timeout=10)
+        r = sb.process.exec(f"cat {wsp}/configs/test.yaml", timeout=10)
         print("Config written:")
         print(r.artifacts.stdout)
 
         print("Running ORAK 2048 game with OpenRouter model...")
         r = sb.process.exec(
-            "cd /workspace && uv run python scripts/mcp_play_game.py --config configs/test.yaml",
+            f"cd {wsp} && uv run python scripts/mcp_play_game.py --config configs/test.yaml",
             timeout=600,  # 10 minutes should be plenty for 10 steps
         )
         stdout = r.artifacts.stdout
@@ -124,7 +128,11 @@ def main() -> None:
     finally:
         # ── Cleanup ─────────────────────────────────────────────────────
         print("Cleaning up sandbox...")
-        sb.delete()
+        try:
+            sb.delete()
+        except Exception as exc:
+            print(f"(sandbox delete failed: {exc}; ephemeral sandbox may "
+                  f"auto-cleanup)", file=sys.stderr)
         print("Done.")
 
 
