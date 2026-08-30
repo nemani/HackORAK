@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import textwrap
+import time
 
 from daytona import Daytona, DaytonaConfig, CreateSandboxBaseParams
 
@@ -18,7 +19,7 @@ OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
 MODEL_NAME = "nvidia/nemotron-3-ultra-550b-a55b:free"
 
 # ── Sandbox configuration ───────────────────────────────────────────────
-SANDBOX_NAME = "hackorak-test"
+SANDBOX_NAME = f"hackorak-test-{int(time.time())}"
 SANDBOX_LANGUAGE = "python"
 DOMAIN_ALLOW_LIST = "openrouter.ai,github.com,pypi.org,files.pythonhosted.org"
 AUTO_STOP_INTERVAL = 3600  # seconds
@@ -89,8 +90,16 @@ def main() -> None:
 
         print("Running uv sync...")
         r = sb.process.exec(
-            f"cd {wsp} && uv sync 2>&1 | tail -5",
+            f"cd {wsp} && uv sync 2>&1 | tail -10",
             timeout=300,
+        )
+        print(r.artifacts.stdout)
+
+        # The lockfile may be platform-specific; install missing deps
+        print("Installing additional Python deps (omegaconf, Pillow)...")
+        r = sb.process.exec(
+            f"cd {wsp} && uv pip install omegaconf Pillow 2>&1 | tail -3",
+            timeout=120,
         )
         print(r.artifacts.stdout)
 
