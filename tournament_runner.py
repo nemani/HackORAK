@@ -128,23 +128,68 @@ def main() -> None:
         print("Config written:")
         print(r.artifacts.stdout)
 
-        print("Running ORAK 2048 game with OpenRouter model...")
-        r = sb.process.exec(
-            "uv run python scripts/mcp_play_game.py --config configs/test.yaml",
+        print("Starting ORAK 2048 game (background)...")
+        logfile = "/tmp/game-run.log"
+        sb.process.exec(
+            f"nohup uv run python scripts/mcp_play_game.py"
+            f" --config configs/test.yaml"
+            f" > {logfile} 2>&1 &",
             cwd=wsp,
-            timeout=1800,  # 30 min — free models can be slow
+            timeout=15,
         )
-        stdout = r.artifacts.stdout
-        print("── Game output ──")
-        print(stdout)
-        print("── End output ──")
 
-        # ── Step 4: Extract score ───────────────────────────────────────
-        score_match = re.search(r"Score:\s*(-?\d+)", stdout)
-        if score_match:
-            score = int(score_match.group(1))
+        # Poll for completion: tail the log, look for Score: or
+        # final_score.json.  Timeout after 30 min total.
+        import time as _time
+        deadline = _time.time() + 1800
+        score = None
+        while _time.time() < deadline:
+            _time.sleep(30)
+            try:
+                r = sb.process.exec(
+                    f"tail -40 {logfile} 2>/dev/null || echo '<no log yet>'",
+                    timeout=10,
+                )
+                tail = r.artifacts.stdout
+                # Print any new content
+                if tail.strip() and tail.strip() != "<no log yet>":
+                    print(f"[{_time.strftime('%H:%M:%S')}] tail:\n{tail}")
+                # Check for score in log
+                score_match = re.search(r"Score:\s*(-?\d+)", tail)
+                if score_match:
+                    score = int(score_match.group(1))
+                    print("Game completed!")
+                    break
+                # Also check if final_score.json exists
+                r2 = sb.process.exec(
+                    f"find logs -name final_score.json -newer {logfile}"
+                    f" 2>/dev/null | head -1",
+                    timeout=10,
+                )
+                found = r2.artifacts.stdout.strip()
+                if found:
+                    r3 = sb.process.exec(f"cat {found}", timeout=10)
+                    print(f"Score file: {r3.artifacts.stdout}")
+                    import json as _json
+                    try:
+                        data = _json.loads(r3.artifacts.stdout)
+                        score = data.get("score", 0)
+                    except Exception:
+                        pass
+                    break
+            except Exception as exc:
+                print(f"(poll error: {exc})", file=sys.stderr)
         else:
-            print("WARNING: Could not find 'Score:' in output; defaulting to 0", file=sys.stderr)
+            # Timed out — grab whatever we have
+            print("Timed out waiting for game. Last log tail:")
+            try:
+                r = sb.process.exec(f"tail -60 {logfile}", timeout=10)
+                print(r.artifacts.stdout)
+            except Exception:
+                pass
+
+        if score is None:
+            print("WARNING: No score found; defaulting to 0", file=sys.stderr)
             score = 0
 
         # ── Step 5: Print result ────────────────────────────────────────
