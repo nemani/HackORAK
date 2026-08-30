@@ -21,7 +21,7 @@ MODEL_NAME = "nvidia/nemotron-3-ultra-550b-a55b:free"
 # ── Sandbox configuration ───────────────────────────────────────────────
 SANDBOX_NAME = f"hackorak-test-{int(time.time())}"
 SANDBOX_LANGUAGE = "python"
-DOMAIN_ALLOW_LIST = "openrouter.ai,github.com,pypi.org,files.pythonhosted.org"
+DOMAIN_ALLOW_LIST = "openrouter.ai,github.com,pypi.org,files.pythonhosted.org,openaipublic.blob.core.windows.net"
 AUTO_STOP_INTERVAL = 3600  # seconds
 
 # ── ORAK game configuration ─────────────────────────────────────────────
