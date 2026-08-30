@@ -102,7 +102,7 @@ def main() -> None:
         r = sb.process.exec(
             f"cd {wsp} && uv pip install omegaconf Pillow gymnasium openai "
             f"tiktoken anthropic transformers google-genai google-auth "
-            f"2>&1 | tail -10",
+            f"termcolor 2>&1 | tail -12",
             timeout=300,
         )
         print(r.artifacts.stdout)
