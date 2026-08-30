@@ -96,10 +96,14 @@ def main() -> None:
         print(r.artifacts.stdout)
 
         # The lockfile may be platform-specific; install missing deps
-        print("Installing additional Python deps (omegaconf, Pillow, gymnasium, openai)...")
+        # The ORAK codebase imports many packages at module level;
+        # install everything the 2048 text path needs.
+        print("Installing extra Python deps (may take a while for torch)...")
         r = sb.process.exec(
-            f"cd {wsp} && uv pip install omegaconf Pillow gymnasium openai 2>&1 | tail -5",
-            timeout=120,
+            f"cd {wsp} && uv pip install omegaconf Pillow gymnasium openai "
+            f"tiktoken anthropic transformers google-genai google-auth "
+            f"2>&1 | tail -10",
+            timeout=300,
         )
         print(r.artifacts.stdout)
 
