@@ -112,6 +112,17 @@ def main() -> None:
         sb.process.exec(f"mkdir -p {wsp}/configs", timeout=10)
         sb.fs.upload_file(TEST_CONFIG_YAML.encode(), f"{wsp}/configs/test.yaml")
 
+        # Create key file required by memory.py module-level setup_openai()
+        print("Creating API key file for memory module...")
+        sb.process.exec(
+            f"mkdir -p {wsp}/src/mcp_agent_servers/keys/openai-key",
+            timeout=10,
+        )
+        sb.fs.upload_file(
+            f"{OPENROUTER_API_KEY}\n".encode(),
+            f"{wsp}/src/mcp_agent_servers/keys/openai-key/key.env",
+        )
+
         # Verify the config was written
         r = sb.process.exec(f"cat {wsp}/configs/test.yaml", timeout=10)
         print("Config written:")
