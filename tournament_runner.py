@@ -130,8 +130,9 @@ def main() -> None:
 
         print("Running ORAK 2048 game with OpenRouter model...")
         r = sb.process.exec(
-            f"cd {wsp} && uv run python scripts/mcp_play_game.py --config configs/test.yaml",
-            timeout=600,  # 10 minutes should be plenty for 10 steps
+            "uv run python scripts/mcp_play_game.py --config configs/test.yaml",
+            cwd=wsp,
+            timeout=1800,  # 30 min — free models can be slow
         )
         stdout = r.artifacts.stdout
         print("── Game output ──")
