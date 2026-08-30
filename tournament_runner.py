@@ -78,7 +78,7 @@ def main() -> None:
         sb.git.clone(
             "https://github.com/nemani/HackORAK.git",
             wsp,
-            branch="release",
+            branch="fm/tournament-runner",
         )
 
         print("Installing uv...")

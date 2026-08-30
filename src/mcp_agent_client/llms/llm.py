@@ -68,6 +68,12 @@ def load_model(
         default_model = model
         output_budget = 64000
         model_type = "gemini"
+    elif api_base_url is not None and "openrouter" in api_base_url:
+        # OpenRouter exposes an OpenAI-compatible API; treat it as its
+        # own type so we can set the right budget and skip HF tokenizers.
+        default_model = model
+        output_budget = 128000
+        model_type = "openrouter"
     else:
         default_model = model
         model_type = "local"
@@ -116,6 +122,20 @@ def load_model(
             ctx_manager=ctx_manager,
             desired_output_length=output_budget,
             temperature=temperature,
+        )
+        enc = tiktoken.get_encoding("cl100k_base")
+    elif model_type == "openrouter":
+        assert (api_key is not None) and (api_base_url is not None), (
+            "API key and base URL must be provided for OpenRouter models."
+        )
+        llm = OpenRouterBase(
+            model=model,
+            ctx_manager=ctx_manager,
+            desired_output_length=output_budget,
+            temperature=temperature,
+            repetition_penalty=repetition_penalty,
+            api_key=api_key,
+            api_base_url=api_base_url,
         )
         enc = tiktoken.get_encoding("cl100k_base")
     elif model_type == "local":
@@ -410,6 +430,125 @@ class GeminiBase:
         }
 
 # Llama2 Model Base
+class OpenRouterBase:
+    """LLM client for OpenRouter and other OpenAI-compatible providers.
+
+    Like ChatGPTBase but manages its own ``OpenAI`` client so it can
+    point at an arbitrary ``api_base_url``.  Uses tiktoken for token
+    counting — no HuggingFace tokenizer download.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        api_key: str,
+        api_base_url: str,
+        tool: Iterable[CompletionFunc] | None = None,
+        ctx_manager: MoneyManager | None = None,
+        desired_output_length: int = 1024,
+        temperature: float = 1.0,
+        repetition_penalty: float = 1.0,
+    ):
+        self.model = model
+        self.tool = tool
+        assert ctx_manager is not None
+        self.ctx_manager = ctx_manager
+        self.client = OpenAI(api_key=api_key, base_url=api_base_url)
+        self.enc = tiktoken.get_encoding("cl100k_base")
+        # OpenRouter supports very large contexts on many models;
+        # 128 k is a safe default for most free-tier models.
+        self.max_budget = 128000
+        self.desired_output_length = desired_output_length
+        self.temperature = temperature
+        self.repetition_penalty = repetition_penalty
+
+    def cutoff(self, message: str, budget: int) -> str:
+        tokens = self.enc.encode(message)
+        if len(tokens) > budget:
+            message = self.enc.decode(tokens[:budget])
+        return message
+
+    def manage_length(self, messages: List[Message]) -> None:
+        last_message = messages[-1]["content"]
+        if len(messages) > 1:
+            previous_tokens_length = 0
+            for msg in messages[:-1]:
+                if "content" in msg.keys() and msg["content"] is not None:
+                    previous_tokens_length += len(
+                        self.enc.encode(msg["content"])
+                    )
+        else:
+            previous_tokens_length = 0
+        budget = (
+            self.max_budget
+            - self.desired_output_length
+            - previous_tokens_length
+        )
+        messages[-1]["content"] = self.cutoff(last_message, budget)
+
+    def chat(
+        self,
+        messages: List[Message],
+        function: List[CompletionFunc | None] = [None],
+        disable_function: bool = False,
+        **kwargs,
+    ):
+        self.manage_length(messages)
+        if self.tool is not None and not disable_function:
+            response = chat_completion_request(
+                messages,
+                self.tool.functions,
+                model=self.model,
+                client=self.client,
+                temperature=self.temperature,
+                frequency_penalty=self.repetition_penalty,
+                **kwargs,
+            )
+        else:
+            response = chat_completion_request(
+                messages,
+                model=self.model,
+                client=self.client,
+                temperature=self.temperature,
+                **kwargs,
+            )
+        self.ctx_manager(response)
+        return response
+
+    def __call__(
+        self,
+        messages: List[Message],
+        disable_function: bool = False,
+        stop: List[str] | str | None = None,
+        n: int = 1,
+        max_tokens: int | None = None,
+        **kwargs,
+    ):
+        response = self.chat(
+            messages,
+            disable_function=disable_function,
+            stop=stop,
+            n=n,
+            max_tokens=max_tokens,
+            **kwargs,
+        )
+
+        full_message = response.choices[0]
+        if full_message.finish_reason == "function_call":
+            messages.append(full_message["message"])
+            func_results = self.tool.call_function(messages, full_message)
+            messages.append(func_results)
+            response = self.chat(
+                messages,
+                disable_function=False,
+            )
+            full_message = response.choices[0]
+        return {
+            "response": response,
+            "function_results": None,
+        }
+
+
 class LocalBase:
     def __init__(
         self,
