@@ -96,9 +96,9 @@ def main() -> None:
         print(r.artifacts.stdout)
 
         # The lockfile may be platform-specific; install missing deps
-        print("Installing additional Python deps (omegaconf, Pillow)...")
+        print("Installing additional Python deps (omegaconf, Pillow, gymnasium, openai)...")
         r = sb.process.exec(
-            f"cd {wsp} && uv pip install omegaconf Pillow 2>&1 | tail -3",
+            f"cd {wsp} && uv pip install omegaconf Pillow gymnasium openai 2>&1 | tail -5",
             timeout=120,
         )
         print(r.artifacts.stdout)
