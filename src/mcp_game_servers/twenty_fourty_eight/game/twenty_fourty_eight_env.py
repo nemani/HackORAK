@@ -1,7 +1,11 @@
 import json
 import re
 import logging
-import pygame
+
+try:
+    import pygame
+except ImportError:
+    pygame = None
 
 from PIL import Image
 import numpy as np
@@ -82,6 +86,8 @@ class TwentyFourtyEightEnv(BaseEnv):
         self.log_path = self.cfg.log_path
 
     def pygame_surface_to_pil(self):
+        if pygame is None:
+            return None
         # Get the pygame display surface
         surface = pygame.display.get_surface()
         data = pygame.image.tostring(surface, 'RGB')

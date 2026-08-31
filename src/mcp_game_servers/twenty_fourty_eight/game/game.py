@@ -3,8 +3,12 @@ import sys
 import time
 from copy import deepcopy
 
-import pygame
-from pygame.locals import *
+try:
+    import pygame
+    from pygame.locals import *
+    _HAS_PYGAME = True
+except ImportError:
+    _HAS_PYGAME = False
 
 from mcp_game_servers.twenty_fourty_eight.game.logic import *
 import os
@@ -17,7 +21,7 @@ config_path = os.path.join(base_dir, "config.yaml")
 with open(config_path, "r") as file:
     config = yaml.safe_load(file)
 
-if config.get("env", {}).get("show_graphic", False):
+if config.get("env", {}).get("show_graphic", False) and _HAS_PYGAME:
     # show_graphic
     # set up pygame for main gameplay
     pygame.init()

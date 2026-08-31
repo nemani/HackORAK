@@ -36,7 +36,7 @@ TEST_CONFIG_YAML = textwrap.dedent(f"""\
       max_steps: {MAX_STEPS}
     env:
       task: "Merge Tiles to Reach the Target"
-      show_graphic: true
+      show_graphic: false
       target_tile: 2048
       input_modality: "{INPUT_MODALITY}"
 
@@ -98,12 +98,21 @@ def main() -> None:
         # The lockfile may be platform-specific; install missing deps
         # The ORAK codebase imports many packages at module level;
         # install everything the 2048 text path needs.
-        print("Installing extra Python deps (may take a while for torch)...")
+        print("Installing core Python deps...")
         r = sb.process.exec(
             f"cd {wsp} && uv pip install omegaconf Pillow gymnasium openai "
             f"tiktoken anthropic transformers google-genai google-auth "
-            f"termcolor langchain-openai langchain-chroma pygame 2>&1 | tail -12",
+            f"termcolor langchain-openai langchain-chroma 2>&1 | tail -12",
             timeout=300,
+        )
+        print(r.artifacts.stdout)
+
+        # Try pygame separately — may fail on Python 3.14+ (no wheels, no
+        # SDL headers) but the game code now handles that gracefully.
+        print("Installing pygame (optional, may fail)...")
+        r = sb.process.exec(
+            f"cd {wsp} && uv pip install pygame 2>&1 | tail -5",
+            timeout=120,
         )
         print(r.artifacts.stdout)
 
@@ -143,6 +152,7 @@ def main() -> None:
         import time as _time
         deadline = _time.time() + 1800
         score = None
+        _last_tail = None
         while _time.time() < deadline:
             _time.sleep(30)
             try:
@@ -151,12 +161,10 @@ def main() -> None:
                     timeout=10,
                 )
                 tail = r.artifacts.stdout
-                # Print any new content
-                if tail.strip() and tail.strip() != "<no log yet>":
-                    # Only print if new content appeared
-                    if not hasattr(print, "_last_tail") or tail != print._last_tail:
-                        print(f"[{_time.strftime('%H:%M:%S')}] tail:\n{tail}")
-                        print._last_tail = tail
+                # Print only new content
+                if tail.strip() and tail.strip() != "<no log yet>" and tail != _last_tail:
+                    print(f"[{_time.strftime('%H:%M:%S')}] tail:\n{tail}")
+                    _last_tail = tail
                 # Detect crash: stop polling early
                 if "Traceback (most recent call last)" in tail or \
                    "ModuleNotFoundError" in tail:
