@@ -102,7 +102,7 @@ def main() -> None:
         r = sb.process.exec(
             f"cd {wsp} && uv pip install omegaconf Pillow gymnasium openai "
             f"tiktoken anthropic transformers google-genai google-auth "
-            f"termcolor langchain-openai langchain-chroma 2>&1 | tail -12",
+            f"termcolor langchain-openai langchain-chroma pygame 2>&1 | tail -12",
             timeout=300,
         )
         print(r.artifacts.stdout)
@@ -153,7 +153,15 @@ def main() -> None:
                 tail = r.artifacts.stdout
                 # Print any new content
                 if tail.strip() and tail.strip() != "<no log yet>":
-                    print(f"[{_time.strftime('%H:%M:%S')}] tail:\n{tail}")
+                    # Only print if new content appeared
+                    if not hasattr(print, "_last_tail") or tail != print._last_tail:
+                        print(f"[{_time.strftime('%H:%M:%S')}] tail:\n{tail}")
+                        print._last_tail = tail
+                # Detect crash: stop polling early
+                if "Traceback (most recent call last)" in tail or \
+                   "ModuleNotFoundError" in tail:
+                    print("Game crashed — see traceback above.")
+                    break
                 # Check for score in log
                 score_match = re.search(r"Score:\s*(-?\d+)", tail)
                 if score_match:
