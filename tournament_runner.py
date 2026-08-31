@@ -176,10 +176,10 @@ def main() -> None:
                     score = int(score_match.group(1))
                     print("Game completed!")
                     break
-                # Also check if final_score.json exists
+                # Also check if final_score.json exists AND is non-empty
                 r2 = sb.process.exec(
                     f"find logs -name final_score.json -newer {logfile}"
-                    f" 2>/dev/null | head -1",
+                    f" -size +4c 2>/dev/null | head -1",
                     timeout=10,
                 )
                 found = r2.artifacts.stdout.strip()

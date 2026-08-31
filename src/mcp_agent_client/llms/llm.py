@@ -533,6 +533,33 @@ class OpenRouterBase:
             **kwargs,
         )
 
+        # Handle error responses (e.g. OpenRouter provider errors)
+        if response is None or getattr(response, "choices", None) is None:
+            logger.warning(
+                f"OpenRouter returned no choices. Response: {response}"
+            )
+            # Return a minimal fallback so the caller doesn't crash.
+            # An empty message is interpreted as "no action" downstream.
+            fallback = OpenAIChatCompletion(
+                id="error-fallback",
+                choices=[
+                    OpenAIChoice(
+                        finish_reason="stop",
+                        index=0,
+                        message=OpenAIChatCompletionMessage(
+                            content="", role="assistant"
+                        ),
+                    )
+                ],
+                created=0,
+                model=self.model,
+                object="chat.completion",
+            )
+            return {
+                "response": fallback,
+                "function_results": None,
+            }
+
         full_message = response.choices[0]
         if full_message.finish_reason == "function_call":
             messages.append(full_message["message"])
@@ -542,7 +569,8 @@ class OpenRouterBase:
                 messages,
                 disable_function=False,
             )
-            full_message = response.choices[0]
+            if response is not None and getattr(response, "choices", None) is not None:
+                full_message = response.choices[0]
         return {
             "response": response,
             "function_results": None,
